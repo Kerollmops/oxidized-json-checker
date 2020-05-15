@@ -5,9 +5,8 @@ fn parse(text: &str) -> io::Result<()> {
     let mut string = String::new();
     let mut checker = JsonChecker::new(text.as_bytes());
     checker.read_to_string(&mut string)?;
-    if !checker.finish() {
-        return Err(io::Error::new(io::ErrorKind::Other, "invalid JSON data"));
-    }
+    checker.finish()?;
+
     Result::Ok(())
 }
 
@@ -18,7 +17,7 @@ fn it_works() {
     let mut string = String::new();
     let mut checker = JsonChecker::new(json.as_bytes());
     checker.read_to_string(&mut string).unwrap();
-    assert!(checker.finish());
+    checker.finish().unwrap();
 
     assert_eq!(&*string, json);
 }
@@ -32,7 +31,7 @@ fn it_does_not_work() {
     checker.read_to_string(&mut string).unwrap();
 
     // This should fail
-    assert!(!checker.finish());
+    checker.finish().unwrap_err();
 
     assert_eq!(&*string, json);
 }

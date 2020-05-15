@@ -1,10 +1,49 @@
-use std::io;
+use std::{fmt, io};
 use crate::internals::{State, Class, Mode};
 use crate::internals::{STATE_TRANSITION_TABLE, ASCII_CLASS};
 
 #[cfg(test)]
 mod tests;
 mod internals;
+
+#[derive(Copy, Clone, Debug)]
+pub enum Error {
+    InvalidCharacter,
+    EmptyCurlyBraces,
+    OrphanCurlyBrace,
+    OrphanSquareBrace,
+    MaxDepthReached,
+    InvalidQuote,
+    InvalidComma,
+    InvalidColon,
+    InvalidState,
+    IncompleteElement,
+}
+
+impl From<Error> for io::Error {
+    fn from(err: Error) -> io::Error {
+        io::Error::new(io::ErrorKind::Other, err)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::InvalidCharacter => f.write_str("invalid character"),
+            Error::EmptyCurlyBraces => f.write_str("empty curly braces"),
+            Error::OrphanCurlyBrace => f.write_str("orphan curly brace"),
+            Error::OrphanSquareBrace => f.write_str("orphan square brace"),
+            Error::MaxDepthReached => f.write_str("max depth reached"),
+            Error::InvalidQuote => f.write_str("invalid quote"),
+            Error::InvalidComma => f.write_str("invalid comma"),
+            Error::InvalidColon => f.write_str("invalid colon"),
+            Error::InvalidState => f.write_str("invalid state"),
+            Error::IncompleteElement => f.write_str("incomplete element"),
+        }
+    }
+}
 
 pub struct JsonChecker<R> {
     state: State,
@@ -36,7 +75,7 @@ impl<R> JsonChecker<R> {
     /// UTF-32. It returns TRUE if things are looking ok so far. If it rejects the
     /// text, it deletes the JSON_checker object and returns false.
     #[inline]
-    fn next_byte(&mut self, next_byte: u8) -> bool {
+    fn next_byte(&mut self, next_byte: u8) -> Result<(), Error> {
         // Determine the character's class.
         let next_class = if next_byte >= 128 {
             Class::CEtc
@@ -45,88 +84,90 @@ impl<R> JsonChecker<R> {
         };
 
         if next_class == Class::Invalid {
-            return false;
+            return Err(Error::InvalidCharacter);
         }
 
-        // Get the next state from the state transition table.
-        let next_state = STATE_TRANSITION_TABLE[self.state as usize][next_class as usize];
-        if next_state.is_valid() {
-            // Change the state.
-            self.state = next_state;
-        } else {
-            // Or perform one of the actions.
-            match next_state {
-                State::Wec => { // Empty }
-                    if !self.pop(Mode::Key) {
-                        return false;
-                    }
-                    self.state = State::Ok;
-                },
-                State::Wcu => { // }
-                    if !self.pop(Mode::Object) {
-                        return false;
-                    }
-                    self.state = State::Ok;
-                },
-                State::Ws => { // ]
-                    if !self.pop(Mode::Array) {
-                        return false;
-                    }
-                    self.state = State::Ok;
-                },
-                State::Woc => { // {
-                    if !self.push(Mode::Key) {
-                        return false;
-                    }
-                    self.state = State::Ob;
-                },
-                State::Wos => { // [
-                    if !self.push(Mode::Array) {
-                        return false;
-                    }
-                    self.state = State::Ar;
+        // Get the next state from the state transition table and
+        // perform one of the actions.
+        match STATE_TRANSITION_TABLE[self.state as usize][next_class as usize] {
+            State::Wec => { // Empty }
+                if !self.pop(Mode::Key) {
+                    return Err(Error::EmptyCurlyBraces);
                 }
-                State::Wq => { // "
-                    match self.stack.last() {
-                        Some(Mode::Key) => self.state = State::Co,
-                        Some(Mode::Array) |
-                        Some(Mode::Object) => self.state = State::Ok,
-                        _ => return false,
-                    }
-                },
-                State::Wcm => { // ,
-                    match self.stack.last() {
-                        Some(Mode::Object) => {
-                            // A comma causes a flip from object mode to key mode.
-                            if !self.pop(Mode::Object) || !self.push(Mode::Key) {
-                                return false;
-                            }
-                            self.state = State::Ke;
-                        }
-                        Some(Mode::Array) => self.state = State::Va,
-                        _ => return false,
-                    }
-                },
-                State::Wcl => { // :
-                    // A colon causes a flip from key mode to object mode.
-                    if !self.pop(Mode::Key) || !self.push(Mode::Object) {
-                        return false;
-                    }
-                    self.state = State::Va;
-                },
-                // Bad action.
-                _ => return false,
+                self.state = State::Ok;
+            },
+            State::Wcu => { // }
+                if !self.pop(Mode::Object) {
+                    return Err(Error::OrphanCurlyBrace);
+                }
+                self.state = State::Ok;
+            },
+            State::Ws => { // ]
+                if !self.pop(Mode::Array) {
+                    return Err(Error::OrphanSquareBrace);
+                }
+                self.state = State::Ok;
+            },
+            State::Woc => { // {
+                if !self.push(Mode::Key) {
+                    return Err(Error::MaxDepthReached);
+                }
+                self.state = State::Ob;
+            },
+            State::Wos => { // [
+                if !self.push(Mode::Array) {
+                    return Err(Error::MaxDepthReached);
+                }
+                self.state = State::Ar;
             }
+            State::Wq => { // "
+                match self.stack.last() {
+                    Some(Mode::Key) => self.state = State::Co,
+                    Some(Mode::Array) |
+                    Some(Mode::Object) => self.state = State::Ok,
+                    _ => return Err(Error::InvalidQuote),
+                }
+            },
+            State::Wcm => { // ,
+                match self.stack.last() {
+                    Some(Mode::Object) => {
+                        // A comma causes a flip from object mode to key mode.
+                        if !self.pop(Mode::Object) || !self.push(Mode::Key) {
+                            return Err(Error::InvalidComma);
+                        }
+                        self.state = State::Ke;
+                    }
+                    Some(Mode::Array) => self.state = State::Va,
+                    _ => return Err(Error::InvalidComma),
+                }
+            },
+            State::Wcl => { // :
+                // A colon causes a flip from key mode to object mode.
+                if !self.pop(Mode::Key) || !self.push(Mode::Object) {
+                    return Err(Error::InvalidColon);
+                }
+                self.state = State::Va;
+            },
+            State::Invalid => {
+                return Err(Error::InvalidState)
+            },
+
+            // Or change the state.
+            state => self.state = state,
         }
-        return true;
+
+        Ok(())
     }
 
     /// The JSON_checker_done function should be called after all of the characters
     /// have been processed, but only if every call to JSON_checker_char returned
     /// TRUE. This function deletes the JSON_checker and returns TRUE if the JSON
     /// text was accepted.
-    pub fn finish(mut self) -> bool {
-        self.state == State::Ok && self.pop(Mode::Done)
+    pub fn finish(mut self) -> Result<(), Error> {
+        if self.state == State::Ok && self.pop(Mode::Done) {
+            return Ok(())
+        }
+        Err(Error::IncompleteElement)
     }
 
     /// Push a mode onto the stack. Return false if there is overflow.
@@ -147,11 +188,9 @@ impl<R: io::Read> io::Read for JsonChecker<R> {
         let len = self.reader.read(buf)?;
 
         for c in &buf[..len] {
-            if !self.next_byte(*c) {
-                return Err(io::Error::new(io::ErrorKind::Other, "invalid JSON data")); // TODO use a real error type
-            }
+            self.next_byte(*c)?;
         }
 
-        Result::Ok(len)
+        Ok(len)
     }
 }

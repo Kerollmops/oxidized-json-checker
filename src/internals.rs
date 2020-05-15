@@ -112,15 +112,6 @@ pub enum State {
     Invalid,
 }
 
-impl State {
-    pub fn is_valid(self) -> bool {
-        match self {
-            Wcl | Wcm | Wq | Wos | Woc | Ws | Wec | Wcu | State::Invalid => false,
-            _ => true,
-        }
-    }
-}
-
 // Number of states by number of classes
 pub const STATE_TRANSITION_TABLE: [[State; 31]; 31] = [
 /*
