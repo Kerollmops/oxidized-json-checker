@@ -124,24 +124,38 @@ impl fmt::Display for Error {
     }
 }
 
+/// Represents any valid JSON type.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum JsonType {
+    Null,
+    Bool,
+    Number,
+    String,
+    Array,
+    Object,
+}
+
 /// A convenient method to check and consume JSON from a stream of bytes.
 ///
 /// # Example
 ///
 /// ```
 /// # fn fmain() -> Result<(), Box<dyn std::error::Error>> {
+/// use oxidized_json_checker::{validate, JsonType};
 /// let text = r#""I am a simple string!""#;
 /// let bytes = text.as_bytes();
 ///
-/// oxidized_json_checker::validate(bytes)?;
+/// let json_type = validate(bytes)?;
+/// assert_eq!(json_type, JsonType::String);
 /// # Ok(()) }
 /// # fmain().unwrap()
 /// ```
-pub fn validate<R: io::Read>(reader: R) -> io::Result<()> {
+pub fn validate<R: io::Read>(reader: R) -> io::Result<JsonType> {
     let mut checker = JsonChecker::new(reader);
     io::copy(&mut checker, &mut io::sink())?;
+    let outer_type = checker.outer_type();
     checker.finish()?;
-    Ok(())
+    Ok(outer_type.unwrap())
 }
 
 /// The `JsonChecker` is a `io::Read` adapter, it can be used like a pipe,
@@ -173,6 +187,7 @@ pub fn validate<R: io::Read>(reader: R) -> io::Result<()> {
 /// ```
 pub struct JsonChecker<R> {
     state: State,
+    outer_type: Option<JsonType>,
     max_depth: usize,
     stack: Vec<Mode>,
     reader: R,
@@ -196,10 +211,19 @@ impl<R> JsonChecker<R> {
     pub fn with_max_depth(reader: R, max_depth: usize) -> JsonChecker<R> {
         JsonChecker {
             state: State::Go,
+            outer_type: None,
             max_depth,
             stack: vec![Mode::Done],
             reader,
         }
+    }
+
+    /// Returns the outer type that has been seen.
+    ///
+    /// It is based on the first state entered by the automaton.
+    /// If no state has been entered yet, returns `None`.
+    pub fn outer_type(&self) -> Option<JsonType> {
+        self.outer_type
     }
 
     #[inline]
@@ -218,6 +242,19 @@ impl<R> JsonChecker<R> {
         // Get the next state from the state transition table and
         // perform one of the actions.
         let next_state = STATE_TRANSITION_TABLE[self.state as usize][next_class as usize];
+
+        // Save the type we met if not already saved.
+        if self.outer_type.is_none() {
+            match next_state {
+                State::N1 => self.outer_type = Some(JsonType::Null),
+                State::T1 | State::F1 => self.outer_type = Some(JsonType::Bool),
+                State::In => self.outer_type = Some(JsonType::Number),
+                State::Wq => self.outer_type = Some(JsonType::String),
+                State::Wos => self.outer_type = Some(JsonType::Array),
+                State::Woc => self.outer_type = Some(JsonType::Object),
+                _ => (),
+            }
+        }
 
         match next_state {
             State::Wec => { // Empty }

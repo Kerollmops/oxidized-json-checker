@@ -1,4 +1,3 @@
-
 use self::Class::*;
 use self::State::*;
 
