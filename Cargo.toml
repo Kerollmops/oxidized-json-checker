@@ -4,6 +4,5 @@ version = "0.1.0"
 authors = ["Kerollmops <clement@meilisearch.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
+[dev-dependencies]
+snap = "1.0.0" # for the lib.rs example

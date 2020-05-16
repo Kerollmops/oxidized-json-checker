@@ -1,3 +1,81 @@
+//! `oxidized-json-checker` is a library that provides JSON validation without
+//! keeping the stream of bytes in memory, it streams the bytes and validate it
+//! on the fly using a pushdown automaton.
+//!
+//! The original library has been retrieved from [json.org](http://www.json.org/JSON_checker/)
+//! and improved to accept every valid JSON element has a valid JSOn document.
+//!
+//! Therefore this library accepts a single string or single integer as a valid JSON document,
+//! this way we follow the [`serde_json`](https://docs.rs/serde_json) rules.
+//!
+//! # Example: validate some bytes
+//!
+//! This example shows how you can give the library a simple slice
+//! of bytes and validate that it is a valid JSON document.
+//!
+//! ```
+//! # fn fmain() -> Result<(), Box<dyn std::error::Error>> {
+//! let text = r#"["I", "am", "a", "valid", "JSON", "array"]"#;
+//! let bytes = text.as_bytes();
+//!
+//! oxidized_json_checker::validate(bytes)?;
+//! # Ok(()) }
+//! # fmain().unwrap()
+//! ```
+//!
+//! # Example: validate a stream of bytes
+//!
+//! This example shows that you can use any type that implements `io::Read`
+//! to the `JsonChecker` and validate that it is valid JSON.
+//!
+//! ```
+//! # const json_bytes: &[u8] = b"null";
+//! # fn streaming_from_the_web() -> std::io::Result<&'static [u8]> {
+//! #     Ok(json_bytes)
+//! # }
+//! # fn fmain() -> Result<(), Box<dyn std::error::Error>> {
+//! let stream = streaming_from_the_web()?;
+//!
+//! oxidized_json_checker::validate(stream)?;
+//! # Ok(()) }
+//! # fmain().unwrap()
+//! ```
+//!
+//! # Example: complex compositions
+//!
+//! This example show how you can use the `JsonChecker` type to check
+//! a compressed stream of bytes.
+//!
+//! You can decompress the stream, check it using the `JsonChecker`, and compress it
+//! again to pipe it elsewhere. All of that without much memory impact.
+//!
+//! ```no_run
+//! # fn fmain() -> Result<(), Box<dyn std::error::Error>> {
+//! use std::io;
+//! use oxidized_json_checker::JsonChecker;
+//!
+//! let stdin = io::stdin();
+//! let stdout = io::stdout();
+//!
+//! // Wrap the stdin reader in a Snappy reader
+//! // then wrap it in a JsonChecker reader.
+//! let rdr = snap::read::FrameDecoder::new(stdin.lock());
+//! let mut rdr = JsonChecker::new(rdr);
+//!
+//! // Wrap the stdout writer in a Snappy writer.
+//! let mut wtr = snap::write::FrameEncoder::new(stdout.lock());
+//!
+//! // The copy function will return any io error thrown by any of the reader,
+//! // the JsonChecker throw errors when invalid JSON is encountered.
+//! io::copy(&mut rdr, &mut wtr)?;
+//!
+//! // We must check that the final bytes were valid.
+//! rdr.finish()?;
+//! # Ok(()) }
+//! # fmain().unwrap()
+//! ```
+//!
+
 use std::{fmt, io};
 use crate::internals::{State, Class, Mode};
 use crate::internals::{STATE_TRANSITION_TABLE, ASCII_CLASS};
@@ -6,6 +84,7 @@ use crate::internals::{STATE_TRANSITION_TABLE, ASCII_CLASS};
 mod tests;
 mod internals;
 
+/// The error type returned by the `JsonChecker` type.
 #[derive(Copy, Clone, Debug)]
 pub enum Error {
     InvalidCharacter,
@@ -45,35 +124,84 @@ impl fmt::Display for Error {
     }
 }
 
+/// A convenient method to check and consume JSON from a stream of bytes.
+///
+/// # Example
+///
+/// ```
+/// # fn fmain() -> Result<(), Box<dyn std::error::Error>> {
+/// let text = r#""I am a simple string!""#;
+/// let bytes = text.as_bytes();
+///
+/// oxidized_json_checker::validate(bytes)?;
+/// # Ok(()) }
+/// # fmain().unwrap()
+/// ```
+pub fn validate<R: io::Read>(reader: R) -> io::Result<()> {
+    let mut checker = JsonChecker::new(reader);
+    io::copy(&mut checker, &mut io::sink())?;
+    checker.finish()?;
+    Ok(())
+}
+
+/// The `JsonChecker` is a `io::Read` adapter, it can be used like a pipe,
+/// reading bytes, checkings those and output the same bytes.
+///
+/// If an error is encountered, a JSON syntax error or an `io::Error`
+/// it is returned by the `io::Read::read` method.
+///
+/// # Safety
+///
+/// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
+    /// after an error has been returned by any method of this type.
+///
+/// # Example: read from a slice
+///
+/// ```
+/// # fn fmain() -> Result<(), Box<dyn std::error::Error>> {
+/// use std::io;
+/// use oxidized_json_checker::JsonChecker;
+///
+/// let text = r#"{"I am": "an object"}"#;
+/// let bytes = text.as_bytes();
+///
+/// let mut checker = JsonChecker::new(bytes);
+/// io::copy(&mut checker, &mut io::sink())?;
+/// checker.finish()?;
+/// # Ok(()) }
+/// # fmain().unwrap()
+/// ```
 pub struct JsonChecker<R> {
     state: State,
+    max_depth: usize,
     stack: Vec<Mode>,
     reader: R,
 }
 
 impl<R> JsonChecker<R> {
-    /// new_JSON_checker starts the checking process by constructing a JSON_checker
-    /// object. It takes a depth parameter that restricts the level of maximum
-    /// nesting.
+    /// Construct a `JsonChecker. To continue the process, write to the `JsonChecker`
+    /// like a sink, and then call `JsonChecker::finish` to obtain the final result.
     ///
-    /// To continue the process, call JSON_checker_char for each character in the
-    /// JSON text, and then call JSON_checker_done to obtain the final result.
-    /// These functions are fully reentrant.
+    /// # Safety
     ///
-    /// The JSON_checker object will be deleted by JSON_checker_done.
-    /// JSON_checker_char will delete the JSON_checker object if it sees an error.
+    /// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
+    /// after an error has been returned by any method of this type.
     pub fn new(reader: R) -> JsonChecker<R> {
+        JsonChecker::with_max_depth(reader, usize::max_value())
+    }
+
+    /// Construct a `JsonChecker` and restrict the level of maximum nesting.
+    ///
+    /// For more information read the `JsonChecker::new` documentation.
+    pub fn with_max_depth(reader: R, max_depth: usize) -> JsonChecker<R> {
         JsonChecker {
             state: State::Go,
+            max_depth,
             stack: vec![Mode::Done],
             reader,
         }
     }
 
-    /// After calling new_JSON_checker, call this function for each character (or
-    /// partial character) in your JSON text. It can accept UTF-8, UTF-16, or
-    /// UTF-32. It returns TRUE if things are looking ok so far. If it rejects the
-    /// text, it deletes the JSON_checker object and returns false.
     #[inline]
     fn next_byte(&mut self, next_byte: u8) -> Result<(), Error> {
         // Determine the character's class.
@@ -171,25 +299,45 @@ impl<R> JsonChecker<R> {
         Ok(())
     }
 
-    /// The JSON_checker_done function should be called after all of the characters
-    /// have been processed, but only if every call to JSON_checker_char returned
-    /// TRUE. This function deletes the JSON_checker and returns TRUE if the JSON
+    /// The `JsonChecker::finish` method must be called after all of the characters
+    /// have been processed, but only if there where no error thrown already.
+    ///
+    /// This function consumes the `JsonChecker` and returns `Ok(())` if the JSON
     /// text was accepted.
-    pub fn finish(mut self) -> Result<(), Error> {
-        let valid_state = match self.state {
+    ///
+    /// # Safety
+    ///
+    /// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
+    /// after an error has been returned by any method of this type.
+    pub fn finish(self) -> Result<(), Error> {
+        self.into_inner().map(drop)
+    }
+
+    /// The `JsonChecker::into_inner` does the same as the `JsonChecker::finish`
+    /// method but returns the internal reader.
+    ///
+    /// # Safety
+    ///
+    /// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
+    /// after an error has been returned by any method of this type.
+    pub fn into_inner(mut self) -> Result<R, Error> {
+        let is_state_valid = match self.state {
             State::Ok | State::In | State::Fr | State::Fs | State::E3 => true,
             _ => false,
         };
 
-        if valid_state && self.pop(Mode::Done) {
-            return Ok(())
+        if is_state_valid && self.pop(Mode::Done) {
+            return Ok(self.reader)
         }
 
         Err(Error::IncompleteElement)
     }
 
-    /// Push a mode onto the stack. Return false if there is overflow.
+    /// Push a mode onto the stack. Returns false if max depth is reached.
     fn push(&mut self, mode: Mode) -> bool {
+        if self.stack.len() + 1 >= self.max_depth {
+            return false;
+        }
         self.stack.push(mode);
         return true;
     }
