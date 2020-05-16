@@ -1,13 +1,13 @@
 use std::io::Read;
 use crate::*;
 
-fn parse(text: &str) -> io::Result<()> {
+fn parse(text: &str) -> io::Result<JsonType> {
     let mut string = String::new();
     let mut checker = JsonChecker::new(text.as_bytes());
     checker.read_to_string(&mut string)?;
+    let outer_type = checker.outer_type();
     checker.finish()?;
-
-    Result::Ok(())
+    Ok(outer_type.unwrap())
 }
 
 #[test]
@@ -209,45 +209,45 @@ fn unfinished_single_null() {
 
 #[test]
 fn pass_single_string() {
-    assert!(parse(r#""hello""#).is_ok());
+    assert_eq!(parse(r#""hello""#).unwrap(), JsonType::String);
 }
 
 #[test]
 fn pass_single_integer() {
-    assert!(parse(r#"235896"#).is_ok());
-    assert!(parse(r#"-235896"#).is_ok());
+    assert_eq!(parse(r#"235896"#).unwrap(), JsonType::Number);
+    assert_eq!(parse(r#"-235896"#).unwrap(), JsonType::Number);
 }
 
 #[test]
 fn pass_single_float() {
-    assert!(parse(r#"235896.789076"#).is_ok());
-    assert!(parse(r#"-235896.0"#).is_ok());
+    assert_eq!(parse(r#"235896.789076"#).unwrap(), JsonType::Number);
+    assert_eq!(parse(r#"-235896.0"#).unwrap(), JsonType::Number);
 }
 
 #[test]
 fn pass_single_exponent() {
-    parse(r#"235896.10e-56"#).unwrap()
+    assert_eq!(parse(r#"235896.10e-56"#).unwrap(), JsonType::Number);
 }
 
 #[test]
 fn pass_single_fraction() {
-    assert!(parse(r#"235896."#).is_ok());
+    assert_eq!(parse(r#"235896."#).unwrap(), JsonType::Number);
 }
 
 #[test]
 fn pass_single_boolean() {
-    assert!(parse(r#"true"#).is_ok());
-    assert!(parse(r#"false"#).is_ok());
+    assert_eq!(parse(r#"true"#).unwrap(), JsonType::Bool);
+    assert_eq!(parse(r#"false"#).unwrap(), JsonType::Bool);
 }
 
 #[test]
 fn pass_single_null() {
-    assert!(parse(r#"null"#).is_ok());
+    assert_eq!(parse(r#"null"#).unwrap(), JsonType::Null);
 }
 
 #[test]
 fn pass_1() {
-    parse(r##"
+    let outer_type = parse(r##"
 
     [
         "JSON Test Pattern pass1",
@@ -310,19 +310,19 @@ fn pass_1() {
 
     "##).unwrap();
 
-    assert!(true);
+    assert_eq!(outer_type, JsonType::Array);
 }
 
 #[test]
 fn pass_2() {
-    parse(r#"[[[[[[[[[[[[[[[[[[["Not too deep"]]]]]]]]]]]]]]]]]]]"#).unwrap();
+    let outer_type = parse(r#"[[[[[[[[[[[[[[[[[[["Not too deep"]]]]]]]]]]]]]]]]]]]"#).unwrap();
 
-    assert!(true);
+    assert_eq!(outer_type, JsonType::Array);
 }
 
 #[test]
 fn pass_3() {
-    parse(r#"
+    let outer_type = parse(r#"
 
     {
         "JSON Test Pattern pass3": {
@@ -333,5 +333,5 @@ fn pass_3() {
 
     "#).unwrap();
 
-    assert!(true);
+    assert_eq!(outer_type, JsonType::Object);
 }
