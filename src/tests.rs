@@ -192,6 +192,16 @@ fn missmatch() {
 }
 
 #[test]
+fn unclosed_single_string() {
+    assert!(parse(r#""hello"#).is_err())
+}
+
+#[test]
+fn pass_single_string() {
+    assert!(parse(r#""hello""#).is_ok());
+}
+
+#[test]
 fn pass_1() {
     parse(r##"
 

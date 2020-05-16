@@ -89,7 +89,9 @@ impl<R> JsonChecker<R> {
 
         // Get the next state from the state transition table and
         // perform one of the actions.
-        match STATE_TRANSITION_TABLE[self.state as usize][next_class as usize] {
+        let next_state = STATE_TRANSITION_TABLE[self.state as usize][next_class as usize];
+
+        match next_state {
             State::Wec => { // Empty }
                 if !self.pop(Mode::Key) {
                     return Err(Error::EmptyCurlyBraces);
@@ -122,6 +124,16 @@ impl<R> JsonChecker<R> {
             }
             State::Wq => { // "
                 match self.stack.last() {
+                    Some(Mode::Done) => {
+                        if !self.push(Mode::String) {
+                            return Err(Error::MaxDepthReached);
+                        }
+                        self.state = State::St;
+                    },
+                    Some(Mode::String) => {
+                        self.pop(Mode::String);
+                        self.state = State::Ok;
+                    },
                     Some(Mode::Key) => self.state = State::Co,
                     Some(Mode::Array) |
                     Some(Mode::Object) => self.state = State::Ok,

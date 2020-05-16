@@ -5,7 +5,7 @@ use self::State::*;
 const ___: Class = Class::Invalid;
 const __: State = State::Invalid;
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Class {
     CSpace, // space
@@ -68,7 +68,7 @@ pub const ASCII_CLASS: [Class; 128] = [
 ];
 
 /// The state codes.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum State {
     Go, // start
     Ok, // ok
@@ -121,8 +121,8 @@ pub const STATE_TRANSITION_TABLE: [[State; 31]; 31] = [
     state is OK and if the mode is MODE_DONE.
 
                  white                                      1-9                                   ABCDF  etc
-             space |  {  }  [  ]  :  ,  "  \  /  +  -  .  0  |  a  b  c  d  e  f  l  n  r  s  t  u  |  E  |*/
-/*start  GO*/ [Go, Go,Woc, __,Wos, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
+             space  |  {    }  [   ]   :   ,   "   \    /  +   -   .   0   |   a   b   c   d   e   f   l   n   r   s   t   u   |   E    | */
+/*start  GO*/ [Go, Go,Woc, __,Wos, __, __, __, Wq, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
 /*ok     OK*/ [Ok, Ok, __,Wcu, __, Ws, __, Wcm,__, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
 /*object OB*/ [Ob, Ob, __,Wec, __, __, __, __, St, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
 /*key    KE*/ [Ke, Ke, __, __, __, __, __, __, St, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
@@ -156,10 +156,11 @@ pub const STATE_TRANSITION_TABLE: [[State; 31]; 31] = [
 ];
 
 /// These modes can be pushed on the stack.
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Mode {
     Array,
     Done,
     Key,
     Object,
+    String,
 }
