@@ -197,6 +197,12 @@ fn unclosed_single_string() {
 }
 
 #[test]
+fn unfinished_single_boolean() {
+    assert!(parse(r#"tru"#).is_err());
+    assert!(parse(r#"fa"#).is_err());
+}
+
+#[test]
 fn pass_single_string() {
     assert!(parse(r#""hello""#).is_ok());
 }
@@ -214,6 +220,12 @@ fn pass_single_float() {
 #[test]
 fn pass_single_fraction() {
     parse(r#"235896."#).unwrap();
+}
+
+#[test]
+fn pass_single_boolean() {
+    parse(r#"true"#).unwrap();
+    parse(r#"false"#).unwrap();
 }
 
 #[test]
