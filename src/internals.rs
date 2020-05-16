@@ -70,37 +70,37 @@ pub const ASCII_CLASS: [Class; 128] = [
 /// The state codes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum State {
-    Go, // start
-    Ok, // ok
-    Ob, // object
-    Ke, // key
-    Co, // colon
-    Va, // value
-    Ar, // array
-    St, // string
-    Es, // escape
-    U1, // u1
-    U2, // u2
-    U3, // u3
-    U4, // u4
-    Mi, // minus
-    Ze, // zero
-    In, // integer
-    Fr, // fraction
-    Fs, // fraction
-    E1, // e
-    E2, // ex
-    E3, // exp
-    T1, // tr
-    T2, // tru
-    T3, // true
-    F1, // fa
-    F2, // fal
-    F3, // fals
-    F4, // false
-    N1, // nu
-    N2, // nul
-    N3, // null
+    Go,  // start
+    Ok,  // ok
+    Ob,  // object
+    Ke,  // key
+    Co,  // colon
+    Va,  // value
+    Ar,  // array
+    St,  // string
+    Es,  // escape
+    U1,  // u1
+    U2,  // u2
+    U3,  // u3
+    U4,  // u4
+    Mi,  // minus
+    Ze,  // zero
+    In,  // integer
+    Fr,  // fraction
+    Fs,  // fraction
+    E1,  // e
+    E2,  // ex
+    E3,  // exp
+    T1,  // tr
+    T2,  // tru
+    T3,  // true
+    F1,  // fa
+    F2,  // fal
+    F3,  // fals
+    F4,  // false
+    N1,  // nu
+    N2,  // nul
+    N3,  // null
     Wcl, // Wrong Colon : (-2)
     Wcm, // Wrong Comma , (-3)
     Wq,  // Wrong Quote " (-4)
@@ -120,9 +120,9 @@ pub const STATE_TRANSITION_TABLE: [[State; 31]; 31] = [
     negative number. A JSON text is accepted if at the end of the text the
     state is OK and if the mode is MODE_DONE.
 
-                 white                                      1-9                                   ABCDF  etc
+                  white                                                   1-9                                                ABCDF     etc
              space  |  {    }  [   ]   :   ,   "   \    /  +   -   .   0   |   a   b   c   d   e   f   l   n   r   s   t   u   |   E    | */
-/*start  GO*/ [Go, Go,Woc, __,Wos, __, __, __, Wq, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
+/*start  GO*/ [Go, Go,Woc, __,Wos, __, __, __, Wq, __, __, __, __, __, In, In, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
 /*ok     OK*/ [Ok, Ok, __,Wcu, __, Ws, __, Wcm,__, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
 /*object OB*/ [Ob, Ob, __,Wec, __, __, __, __, St, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],
 /*key    KE*/ [Ke, Ke, __, __, __, __, __, __, St, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __],

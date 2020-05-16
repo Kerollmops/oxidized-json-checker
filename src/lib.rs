@@ -176,9 +176,15 @@ impl<R> JsonChecker<R> {
     /// TRUE. This function deletes the JSON_checker and returns TRUE if the JSON
     /// text was accepted.
     pub fn finish(mut self) -> Result<(), Error> {
-        if self.state == State::Ok && self.pop(Mode::Done) {
+        let valid_state = match self.state {
+            State::Ok | State::In | State::Fr | State::Fs => true,
+            _ => false,
+        };
+
+        if valid_state && self.pop(Mode::Done) {
             return Ok(())
         }
+
         Err(Error::IncompleteElement)
     }
 

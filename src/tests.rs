@@ -202,6 +202,21 @@ fn pass_single_string() {
 }
 
 #[test]
+fn pass_single_integer() {
+    parse(r#"235896"#).unwrap();
+}
+
+#[test]
+fn pass_single_float() {
+    parse(r#"235896.789076"#).unwrap();
+}
+
+#[test]
+fn pass_single_fraction() {
+    parse(r#"235896."#).unwrap();
+}
+
+#[test]
 fn pass_1() {
     parse(r##"
 
