@@ -203,29 +203,39 @@ fn unfinished_single_boolean() {
 }
 
 #[test]
+fn unfinished_single_null() {
+    assert!(parse(r#"nul"#).is_err());
+}
+
+#[test]
 fn pass_single_string() {
     assert!(parse(r#""hello""#).is_ok());
 }
 
 #[test]
 fn pass_single_integer() {
-    parse(r#"235896"#).unwrap();
+    assert!(parse(r#"235896"#).is_ok());
 }
 
 #[test]
 fn pass_single_float() {
-    parse(r#"235896.789076"#).unwrap();
+    assert!(parse(r#"235896.789076"#).is_ok());
 }
 
 #[test]
 fn pass_single_fraction() {
-    parse(r#"235896."#).unwrap();
+    assert!(parse(r#"235896."#).is_ok());
 }
 
 #[test]
 fn pass_single_boolean() {
-    parse(r#"true"#).unwrap();
-    parse(r#"false"#).unwrap();
+    assert!(parse(r#"true"#).is_ok());
+    assert!(parse(r#"false"#).is_ok());
+}
+
+#[test]
+fn pass_single_null() {
+    assert!(parse(r#"null"#).is_ok());
 }
 
 #[test]
