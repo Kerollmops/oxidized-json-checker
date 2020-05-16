@@ -1,8 +1,13 @@
 [package]
 name = "oxidized-json-checker"
 version = "0.1.0"
+description = "A pushdown automaton low memory JSON bytes stream checker"
 authors = ["Kerollmops <clement@meilisearch.com>"]
 edition = "2018"
+license-file = "LICENSE"
+repository = "https://github.com/Kerollmops/oxidized-json-checker"
+homepage = "https://github.com/Kerollmops/oxidized-json-checker"
+readme = "README.md"
 
 [dev-dependencies]
 snap = "1.0.0" # for the lib.rs example
