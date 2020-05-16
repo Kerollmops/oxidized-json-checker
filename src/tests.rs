@@ -215,11 +215,18 @@ fn pass_single_string() {
 #[test]
 fn pass_single_integer() {
     assert!(parse(r#"235896"#).is_ok());
+    assert!(parse(r#"-235896"#).is_ok());
 }
 
 #[test]
 fn pass_single_float() {
     assert!(parse(r#"235896.789076"#).is_ok());
+    assert!(parse(r#"-235896.0"#).is_ok());
+}
+
+#[test]
+fn pass_single_exponent() {
+    parse(r#"235896.10e-56"#).unwrap()
 }
 
 #[test]

@@ -177,7 +177,7 @@ impl<R> JsonChecker<R> {
     /// text was accepted.
     pub fn finish(mut self) -> Result<(), Error> {
         let valid_state = match self.state {
-            State::Ok | State::In | State::Fr | State::Fs => true,
+            State::Ok | State::In | State::Fr | State::Fs | State::E3 => true,
             _ => false,
         };
 
