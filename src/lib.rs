@@ -153,9 +153,8 @@ pub enum JsonType {
 pub fn validate<R: io::Read>(reader: R) -> io::Result<JsonType> {
     let mut checker = JsonChecker::new(reader);
     io::copy(&mut checker, &mut io::sink())?;
-    let outer_type = checker.outer_type();
-    checker.finish()?;
-    Ok(outer_type.unwrap())
+    let outer_type = checker.finish()?;
+    Ok(outer_type)
 }
 
 /// The `JsonChecker` is a `io::Read` adapter, it can be used like a pipe,
@@ -166,8 +165,7 @@ pub fn validate<R: io::Read>(reader: R) -> io::Result<JsonType> {
 ///
 /// # Safety
 ///
-/// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
-    /// after an error has been returned by any method of this type.
+/// An error encountered while reading bytes will invalidate the checker.
 ///
 /// # Example: read from a slice
 ///
@@ -187,6 +185,7 @@ pub fn validate<R: io::Read>(reader: R) -> io::Result<JsonType> {
 /// ```
 pub struct JsonChecker<R> {
     state: State,
+    error: Option<Error>,
     outer_type: Option<JsonType>,
     max_depth: usize,
     stack: Vec<Mode>,
@@ -196,11 +195,6 @@ pub struct JsonChecker<R> {
 impl<R> JsonChecker<R> {
     /// Construct a `JsonChecker. To continue the process, write to the `JsonChecker`
     /// like a sink, and then call `JsonChecker::finish` to obtain the final result.
-    ///
-    /// # Safety
-    ///
-    /// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
-    /// after an error has been returned by any method of this type.
     pub fn new(reader: R) -> JsonChecker<R> {
         JsonChecker::with_max_depth(reader, usize::max_value())
     }
@@ -211,6 +205,7 @@ impl<R> JsonChecker<R> {
     pub fn with_max_depth(reader: R, max_depth: usize) -> JsonChecker<R> {
         JsonChecker {
             state: State::Go,
+            error: None,
             outer_type: None,
             max_depth,
             stack: vec![Mode::Done],
@@ -218,155 +213,156 @@ impl<R> JsonChecker<R> {
         }
     }
 
-    /// Returns the outer type that has been seen.
-    ///
-    /// It is based on the first state entered by the automaton.
-    /// If no state has been entered yet, returns `None`.
-    pub fn outer_type(&self) -> Option<JsonType> {
-        self.outer_type
-    }
-
     #[inline]
     fn next_byte(&mut self, next_byte: u8) -> Result<(), Error> {
-        // Determine the character's class.
-        let next_class = if next_byte >= 128 {
-            Class::CEtc
-        } else {
-            ASCII_CLASS[next_byte as usize]
-        };
-
-        if next_class == Class::Invalid {
-            return Err(Error::InvalidCharacter);
+        if let Some(error) = self.error {
+            return Err(error);
         }
 
-        // Get the next state from the state transition table and
-        // perform one of the actions.
-        let next_state = STATE_TRANSITION_TABLE[self.state as usize][next_class as usize];
+        // We can potentially use try_blocks in the future.
+        fn internal_next_byte<R>(jc: &mut JsonChecker<R>, next_byte: u8) -> Result<(), Error> {
+            // Determine the character's class.
+            let next_class = if next_byte >= 128 {
+                Class::CEtc
+            } else {
+                ASCII_CLASS[next_byte as usize]
+            };
 
-        // Save the type we met if not already saved.
-        if self.outer_type.is_none() {
+            if next_class == Class::Invalid {
+                return Err(Error::InvalidCharacter);
+            }
+
+            // Get the next state from the state transition table and
+            // perform one of the actions.
+            let next_state = STATE_TRANSITION_TABLE[jc.state as usize][next_class as usize];
+
+            // Save the type we met if not already saved.
+            if jc.outer_type.is_none() {
+                match next_state {
+                    State::N1 => jc.outer_type = Some(JsonType::Null),
+                    State::T1 | State::F1 => jc.outer_type = Some(JsonType::Bool),
+                    State::In => jc.outer_type = Some(JsonType::Number),
+                    State::Wq => jc.outer_type = Some(JsonType::String),
+                    State::Wos => jc.outer_type = Some(JsonType::Array),
+                    State::Woc => jc.outer_type = Some(JsonType::Object),
+                    _ => (),
+                }
+            }
+
             match next_state {
-                State::N1 => self.outer_type = Some(JsonType::Null),
-                State::T1 | State::F1 => self.outer_type = Some(JsonType::Bool),
-                State::In => self.outer_type = Some(JsonType::Number),
-                State::Wq => self.outer_type = Some(JsonType::String),
-                State::Wos => self.outer_type = Some(JsonType::Array),
-                State::Woc => self.outer_type = Some(JsonType::Object),
-                _ => (),
+                State::Wec => { // Empty }
+                    if !jc.pop(Mode::Key) {
+                        return Err(Error::EmptyCurlyBraces);
+                    }
+                    jc.state = State::Ok;
+                },
+                State::Wcu => { // }
+                    if !jc.pop(Mode::Object) {
+                        return Err(Error::OrphanCurlyBrace);
+                    }
+                    jc.state = State::Ok;
+                },
+                State::Ws => { // ]
+                    if !jc.pop(Mode::Array) {
+                        return Err(Error::OrphanSquareBrace);
+                    }
+                    jc.state = State::Ok;
+                },
+                State::Woc => { // {
+                    if !jc.push(Mode::Key) {
+                        return Err(Error::MaxDepthReached);
+                    }
+                    jc.state = State::Ob;
+                },
+                State::Wos => { // [
+                    if !jc.push(Mode::Array) {
+                        return Err(Error::MaxDepthReached);
+                    }
+                    jc.state = State::Ar;
+                }
+                State::Wq => { // "
+                    match jc.stack.last() {
+                        Some(Mode::Done) => {
+                            if !jc.push(Mode::String) {
+                                return Err(Error::MaxDepthReached);
+                            }
+                            jc.state = State::St;
+                        },
+                        Some(Mode::String) => {
+                            jc.pop(Mode::String);
+                            jc.state = State::Ok;
+                        },
+                        Some(Mode::Key) => jc.state = State::Co,
+                        Some(Mode::Array) |
+                        Some(Mode::Object) => jc.state = State::Ok,
+                        _ => return Err(Error::InvalidQuote),
+                    }
+                },
+                State::Wcm => { // ,
+                    match jc.stack.last() {
+                        Some(Mode::Object) => {
+                            // A comma causes a flip from object mode to key mode.
+                            if !jc.pop(Mode::Object) || !jc.push(Mode::Key) {
+                                return Err(Error::InvalidComma);
+                            }
+                            jc.state = State::Ke;
+                        }
+                        Some(Mode::Array) => jc.state = State::Va,
+                        _ => return Err(Error::InvalidComma),
+                    }
+                },
+                State::Wcl => { // :
+                    // A colon causes a flip from key mode to object mode.
+                    if !jc.pop(Mode::Key) || !jc.push(Mode::Object) {
+                        return Err(Error::InvalidColon);
+                    }
+                    jc.state = State::Va;
+                },
+                State::Invalid => {
+                    return Err(Error::InvalidState)
+                },
+
+                // Or change the state.
+                state => jc.state = state,
             }
+
+            Ok(())
         }
 
-        match next_state {
-            State::Wec => { // Empty }
-                if !self.pop(Mode::Key) {
-                    return Err(Error::EmptyCurlyBraces);
-                }
-                self.state = State::Ok;
-            },
-            State::Wcu => { // }
-                if !self.pop(Mode::Object) {
-                    return Err(Error::OrphanCurlyBrace);
-                }
-                self.state = State::Ok;
-            },
-            State::Ws => { // ]
-                if !self.pop(Mode::Array) {
-                    return Err(Error::OrphanSquareBrace);
-                }
-                self.state = State::Ok;
-            },
-            State::Woc => { // {
-                if !self.push(Mode::Key) {
-                    return Err(Error::MaxDepthReached);
-                }
-                self.state = State::Ob;
-            },
-            State::Wos => { // [
-                if !self.push(Mode::Array) {
-                    return Err(Error::MaxDepthReached);
-                }
-                self.state = State::Ar;
-            }
-            State::Wq => { // "
-                match self.stack.last() {
-                    Some(Mode::Done) => {
-                        if !self.push(Mode::String) {
-                            return Err(Error::MaxDepthReached);
-                        }
-                        self.state = State::St;
-                    },
-                    Some(Mode::String) => {
-                        self.pop(Mode::String);
-                        self.state = State::Ok;
-                    },
-                    Some(Mode::Key) => self.state = State::Co,
-                    Some(Mode::Array) |
-                    Some(Mode::Object) => self.state = State::Ok,
-                    _ => return Err(Error::InvalidQuote),
-                }
-            },
-            State::Wcm => { // ,
-                match self.stack.last() {
-                    Some(Mode::Object) => {
-                        // A comma causes a flip from object mode to key mode.
-                        if !self.pop(Mode::Object) || !self.push(Mode::Key) {
-                            return Err(Error::InvalidComma);
-                        }
-                        self.state = State::Ke;
-                    }
-                    Some(Mode::Array) => self.state = State::Va,
-                    _ => return Err(Error::InvalidComma),
-                }
-            },
-            State::Wcl => { // :
-                // A colon causes a flip from key mode to object mode.
-                if !self.pop(Mode::Key) || !self.push(Mode::Object) {
-                    return Err(Error::InvalidColon);
-                }
-                self.state = State::Va;
-            },
-            State::Invalid => {
-                return Err(Error::InvalidState)
-            },
-
-            // Or change the state.
-            state => self.state = state,
+        // By catching returned errors when this `JsonChecker` is used we *fuse*
+        // the checker and ensure the user don't use a checker in an invalid state.
+        if let Err(error) = internal_next_byte(self, next_byte) {
+            self.error = Some(error);
+            return Err(error);
         }
 
         Ok(())
     }
 
     /// The `JsonChecker::finish` method must be called after all of the characters
-    /// have been processed, but only if there where no error thrown already.
+    /// have been processed.
     ///
-    /// This function consumes the `JsonChecker` and returns `Ok(())` if the JSON
-    /// text was accepted.
-    ///
-    /// # Safety
-    ///
-    /// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
-    /// after an error has been returned by any method of this type.
-    pub fn finish(self) -> Result<(), Error> {
-        self.into_inner().map(drop)
+    /// This function consumes the `JsonChecker` and returns `Ok(JsonType)` if the
+    /// JSON text was accepted and the JSON type guessed.
+    pub fn finish(self) -> Result<JsonType, Error> {
+        self.into_inner().map(|(_, t)| t)
     }
 
     /// The `JsonChecker::into_inner` does the same as the `JsonChecker::finish`
-    /// method but returns the internal reader.
-    ///
-    /// # Safety
-    ///
-    /// It is invalid to call `JsonChecker::read`, `JsonChecker::finish` or `JsonChecker::into_inner`
-    /// after an error has been returned by any method of this type.
-    pub fn into_inner(mut self) -> Result<R, Error> {
+    /// method but returns the internal reader along with the JSON type guessed.
+    pub fn into_inner(mut self) -> Result<(R, JsonType), Error> {
         let is_state_valid = match self.state {
             State::Ok | State::In | State::Fr | State::Fs | State::E3 => true,
             _ => false,
         };
 
         if is_state_valid && self.pop(Mode::Done) {
-            return Ok(self.reader)
+            let outer_type = self.outer_type.expect("BUG: the outer type must have been guessed");
+            return Ok((self.reader, outer_type))
         }
 
+        // We do not need to catch this error to *fuse* the checker because this method
+        // consumes the checker, it cannot be reused after an error has been thrown.
         Err(Error::IncompleteElement)
     }
 
@@ -380,7 +376,7 @@ impl<R> JsonChecker<R> {
     }
 
     /// Pop the stack, assuring that the current mode matches the expectation.
-    /// Return false if there is underflow or if the modes mismatch.
+    /// Return false if the stack is empty or if the modes mismatch.
     fn pop(&mut self, mode: Mode) -> bool {
         self.stack.pop() == Some(mode)
     }

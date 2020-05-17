@@ -5,9 +5,8 @@ fn parse(text: &str) -> io::Result<JsonType> {
     let mut string = String::new();
     let mut checker = JsonChecker::new(text.as_bytes());
     checker.read_to_string(&mut string)?;
-    let outer_type = checker.outer_type();
-    checker.finish()?;
-    Ok(outer_type.unwrap())
+    let outer_type = checker.finish()?;
+    Ok(outer_type)
 }
 
 #[test]

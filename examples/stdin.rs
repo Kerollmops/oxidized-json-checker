@@ -5,7 +5,7 @@ fn main() -> io::Result<()> {
     let stdin = io::stdin();
     let mut checker = JsonChecker::new(stdin.lock());
     io::copy(&mut checker, &mut io::sink())?;
-    checker.finish()?;
-    eprintln!("Seems good.");
+    let outer_type = checker.finish()?;
+    eprintln!("{:?}", outer_type);
     Ok(())
 }
