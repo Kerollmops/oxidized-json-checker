@@ -1,6 +1,6 @@
 [package]
 name = "oxidized-json-checker"
-version = "0.3.0"
+version = "0.3.1"
 description = "A pushdown automaton low memory JSON bytes stream checker"
 authors = ["Kerollmops <clement@meilisearch.com>"]
 edition = "2018"
