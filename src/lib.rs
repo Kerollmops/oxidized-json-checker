@@ -157,6 +157,18 @@ pub fn validate<R: io::Read>(reader: R) -> io::Result<JsonType> {
     Ok(outer_type)
 }
 
+/// A convenient method to check and consume JSON from an `str`.
+pub fn validate_str(string: &str) -> Result<JsonType, Error> {
+    validate_bytes(string.as_bytes())
+}
+
+/// A convenient method to check and consume JSON from a bytes slice.
+pub fn validate_bytes(bytes: &[u8]) -> Result<JsonType, Error> {
+    let mut checker = JsonChecker::new(());
+    checker.next_bytes(bytes)?;
+    checker.finish()
+}
+
 /// The `JsonChecker` is a `io::Read` adapter, it can be used like a pipe,
 /// reading bytes, checkings those and output the same bytes.
 ///
@@ -194,7 +206,7 @@ pub struct JsonChecker<R> {
 
 impl<R> fmt::Debug for JsonChecker<R> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("JsonChecker { .. }").finish()
+        f.debug_struct("JsonChecker").finish()
     }
 }
 
@@ -217,6 +229,11 @@ impl<R> JsonChecker<R> {
             stack: vec![Mode::Done],
             reader,
         }
+    }
+
+    #[inline]
+    fn next_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        bytes.iter().try_for_each(|b| self.next_byte(*b))
     }
 
     #[inline]
@@ -390,11 +407,23 @@ impl<R> JsonChecker<R> {
 
 impl<R: io::Read> io::Read for JsonChecker<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let len = self.reader.read(buf)?;
-
-        for c in &buf[..len] {
-            self.next_byte(*c)?;
+        // If an error have already been encountered we return it,
+        // this *fuses* the JsonChecker.
+        if let Some(error) = self.error {
+            return Err(error.into());
         }
+
+        let len = match self.reader.read(buf) {
+            Err(error) => {
+                // We do not store the io::Error in the JsonChecker Error
+                // type instead we use the IncompleteElement error.
+                self.error = Some(Error::IncompleteElement);
+                return Err(error);
+            },
+            Ok(len) => len,
+        };
+
+        self.next_bytes(&buf[..len])?;
 
         Ok(len)
     }
