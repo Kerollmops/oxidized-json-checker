@@ -5,7 +5,6 @@ const ___: Class = Class::Invalid;
 const __: State = State::Invalid;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u32)]
 pub enum Class {
     CSpace, // space
     CWhite, // other whitespace
