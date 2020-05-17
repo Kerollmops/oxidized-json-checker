@@ -125,7 +125,7 @@ impl fmt::Display for Error {
 }
 
 /// Represents any valid JSON type.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub enum JsonType {
     Null,
     Bool,
@@ -190,6 +190,12 @@ pub struct JsonChecker<R> {
     max_depth: usize,
     stack: Vec<Mode>,
     reader: R,
+}
+
+impl<R> fmt::Debug for JsonChecker<R> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("JsonChecker { .. }").finish()
+    }
 }
 
 impl<R> JsonChecker<R> {
