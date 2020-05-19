@@ -8,6 +8,7 @@ license-file = "LICENSE"
 repository = "https://github.com/Kerollmops/oxidized-json-checker"
 homepage = "https://github.com/Kerollmops/oxidized-json-checker"
 readme = "README.md"
+default-run = "ojc"
 
 [dev-dependencies]
 snap = "1.0.0" # for the lib.rs example
