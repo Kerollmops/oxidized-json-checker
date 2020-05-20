@@ -10,5 +10,8 @@ homepage = "https://github.com/Kerollmops/oxidized-json-checker"
 readme = "README.md"
 default-run = "ojc"
 
+[dependencies]
+packed_simd = "0.3.3"
+
 [dev-dependencies]
 snap = "1.0.0" # for the lib.rs example

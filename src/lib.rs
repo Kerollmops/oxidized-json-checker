@@ -233,7 +233,48 @@ impl<R> JsonChecker<R> {
 
     #[inline]
     fn next_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        bytes.iter().try_for_each(|b| self.next_byte(*b))
+        use packed_simd::u8x8;
+
+        // TODO use chunks_exact instead?
+        // By using u8x8 instead of u8x16 we lost 2s on 16s but
+        // we are less prone to find state change requirements.
+        for chunk in bytes.chunks(u8x8::lanes()) {
+            if chunk.len() == u8x8::lanes() && self.state == State::St {
+                // Load the bytes into a SIMD type
+                let bytes = u8x8::from_slice_unaligned(chunk);
+
+                // According to the state STATE_TRANSITION_TABLE we are in the `St` state
+                // and *none of those bytes* are in the `CWhite`, `CQuote` or `CBacks` ascci class
+                // we can avoid processing them at all because they will not change the current state.
+
+                let cquotes = u8x8::splat(b'"');
+                let cbacks = u8x8::splat(b'\\');
+
+                let cwhites1 = u8x8::splat(b'\t');
+                let cwhites2 = u8x8::splat(b'\n');
+                let cwhites3 = u8x8::splat(b'\r');
+
+                // We first compare with quotes because this is the most
+                // common character we can encounter in valid JSON strings
+                // and this way we are able to skip other comparisons faster
+                if bytes.eq(cquotes).any() ||
+                   bytes.eq(cbacks).any() ||
+                   bytes.eq(cwhites1).any() ||
+                   bytes.eq(cwhites2).any() ||
+                   bytes.eq(cwhites3).any()
+                {
+                    chunk.iter().try_for_each(|b| self.next_byte(*b))?;
+                }
+
+                // Now that we checked that these bytes will not change
+                // the state we can continue to the next chunk and ignore them
+
+            } else {
+                chunk.iter().try_for_each(|b| self.next_byte(*b))?;
+            }
+        }
+
+        Ok(())
     }
 
     #[inline]
