@@ -39,3 +39,18 @@ real  0m56.780s
 user  0m47.487s
 sys   0m12.628s
 ```
+
+### `ojc` with SIMD
+
+How many times does it takes to `ojc` already? 56s, that can't be true, we are in 2020...
+What about enabling some SIMD optimizations? Compile the binary with the `nightly` feature and here we go!
+
+```bash
+$ cargo build --release --features nightly
+$ time cat ../wiki-articles.json | ojc
+Array
+
+real    0m15.818s
+user    0m10.892s
+sys     0m10.721s
+```
