@@ -232,6 +232,7 @@ impl<R> JsonChecker<R> {
     }
 
     #[inline]
+    #[cfg(feature = "nightly")]
     fn next_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
         use packed_simd::u8x8;
 
@@ -275,6 +276,12 @@ impl<R> JsonChecker<R> {
         }
 
         Ok(())
+    }
+
+    #[inline]
+    #[cfg(not(feature = "nightly"))]
+    fn next_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        bytes.iter().try_for_each(|b| self.next_byte(*b))
     }
 
     #[inline]

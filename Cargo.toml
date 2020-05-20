@@ -11,7 +11,11 @@ readme = "README.md"
 default-run = "ojc"
 
 [dependencies]
-packed_simd = "0.3.3"
+packed_simd = { version = "0.3.3", optional = true }
 
 [dev-dependencies]
 snap = "1.0.0" # for the lib.rs example
+
+[features]
+default = []
+nightly = ["packed_simd"]
