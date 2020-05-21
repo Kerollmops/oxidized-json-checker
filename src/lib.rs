@@ -476,3 +476,70 @@ impl<R: io::Read> io::Read for JsonChecker<R> {
         Ok(len)
     }
 }
+
+pub enum State2<'a> {
+    Array,
+    EndArray,
+
+    String(&'a [u8]),
+    EndString(&'a [u8]),
+
+    Object,
+    EndObject,
+
+    ObjectKey(&'a [u8]),
+    EndObjectKey,
+
+    ObjectValue,
+    EndObjectValue,
+
+    Null,
+    Boolean(bool),
+    Number(()), // must define that
+}
+
+pub struct StateStreamer<R> {
+    inner: JsonChecker<R>,
+    buffer: Vec<u8>, // must be a circular buffer
+}
+
+impl<R> StateStreamer<R> {
+    pub fn new(reader: R) -> StateStreamer<R> {
+        StateStreamer {
+            inner: JsonChecker::new(reader),
+            buffer: vec![0; 1024],
+        }
+    }
+}
+
+impl<R: io::Read> StateStreamer<R> {
+    pub fn next_state(&mut self) -> io::Result<State2> {
+        // If an error have already been encountered we return it,
+        // this *fuses* the JsonChecker.
+        if let Some(error) = self.inner.error {
+            return Err(error.into());
+        }
+
+        let len = match self.inner.reader.read(&mut self.buffer) {
+            Err(error) => {
+                // We do not store the io::Error in the JsonChecker Error
+                // type instead we use the IncompleteElement error.
+                self.inner.error = Some(Error::IncompleteElement);
+                return Err(error);
+            },
+            Ok(len) => len,
+        };
+
+        // self.next_bytes(&buf[..len])?;
+
+        for b in &self.buffer[..len] {
+            self.inner.next_byte(*b)?;
+            match self.inner.state {
+                State::Ar => println!("New array"),
+                _ => unimplemented!(),
+            }
+        }
+
+        Ok(State2::EndArray)
+    }
+}
