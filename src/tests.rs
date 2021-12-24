@@ -1,4 +1,5 @@
 use std::io::Read;
+
 use crate::*;
 
 fn parse(text: &str) -> io::Result<JsonType> {
@@ -246,7 +247,8 @@ fn pass_single_null() {
 
 #[test]
 fn pass_1() {
-    let outer_type = parse(r##"
+    let outer_type = parse(
+        r##"
 
     [
         "JSON Test Pattern pass1",
@@ -307,7 +309,9 @@ fn pass_1() {
     1e00,2e+00,2e-00
     ,"rosebud"]
 
-    "##).unwrap();
+    "##,
+    )
+    .unwrap();
 
     assert_eq!(outer_type, JsonType::Array);
 }
@@ -321,7 +325,8 @@ fn pass_2() {
 
 #[test]
 fn pass_3() {
-    let outer_type = parse(r#"
+    let outer_type = parse(
+        r#"
 
     {
         "JSON Test Pattern pass3": {
@@ -330,7 +335,9 @@ fn pass_3() {
         }
     }
 
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     assert_eq!(outer_type, JsonType::Object);
 }

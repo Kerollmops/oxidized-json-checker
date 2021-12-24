@@ -78,9 +78,9 @@
 
 #![cfg_attr(feature = "nightly", feature(portable_simd))]
 
-use crate::internals::{Class, Mode, State};
-use crate::internals::{ASCII_CLASS, STATE_TRANSITION_TABLE};
 use std::{fmt, io};
+
+use crate::internals::{Class, Mode, State, ASCII_CLASS, STATE_TRANSITION_TABLE};
 
 mod internals;
 #[cfg(test)]
@@ -294,11 +294,8 @@ impl<R> JsonChecker<R> {
         // We can potentially use try_blocks in the future.
         fn internal_next_byte<R>(jc: &mut JsonChecker<R>, next_byte: u8) -> Result<(), Error> {
             // Determine the character's class.
-            let next_class = if next_byte >= 128 {
-                Class::CEtc
-            } else {
-                ASCII_CLASS[next_byte as usize]
-            };
+            let next_class =
+                if next_byte >= 128 { Class::CEtc } else { ASCII_CLASS[next_byte as usize] };
 
             if next_class == Class::Invalid {
                 return Err(Error::InvalidCharacter);
@@ -434,9 +431,7 @@ impl<R> JsonChecker<R> {
         };
 
         if is_state_valid && self.pop(Mode::Done) {
-            let outer_type = self
-                .outer_type
-                .expect("BUG: the outer type must have been guessed");
+            let outer_type = self.outer_type.expect("BUG: the outer type must have been guessed");
             return Ok((self.reader, outer_type));
         }
 
