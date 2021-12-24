@@ -20,7 +20,7 @@ pub enum Class {
     CPlus,  // +
     CMinus, // -
     CPoint, // .
-    CZero , // 0
+    CZero,  // 0
     CDigit, // 123456789
     CLowA,  // a
     CLowB,  // b
@@ -43,6 +43,7 @@ pub enum Class {
 /// This array maps the 128 ASCII characters into character classes.
 /// The remaining Unicode characters should be mapped to C_ETC.
 /// Non-whitespace control characters are errors.
+#[rustfmt::skip]
 pub const ASCII_CLASS: [Class; 128] = [
     ___,    ___,    ___,    ___,    ___,    ___,      ___,  ___,
     ___,    CWhite, CWhite, ___,    ___,    CWhite,   ___,  ___,
@@ -111,6 +112,7 @@ pub enum State {
 }
 
 // Number of states by number of classes
+#[rustfmt::skip]
 pub const STATE_TRANSITION_TABLE: [[State; 31]; 31] = [
 /*
     The state transition table takes the current state and the current symbol,

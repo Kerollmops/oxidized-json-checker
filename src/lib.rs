@@ -76,13 +76,15 @@
 //! ```
 //!
 
-use std::{fmt, io};
-use crate::internals::{State, Class, Mode};
-use crate::internals::{STATE_TRANSITION_TABLE, ASCII_CLASS};
+#![cfg_attr(feature = "nightly", feature(portable_simd))]
 
+use std::{fmt, io};
+
+use crate::internals::{Class, Mode, State, ASCII_CLASS, STATE_TRANSITION_TABLE};
+
+mod internals;
 #[cfg(test)]
 mod tests;
-mod internals;
 
 /// The error type returned by the `JsonChecker` type.
 #[derive(Copy, Clone, Debug)]
@@ -234,15 +236,15 @@ impl<R> JsonChecker<R> {
     #[inline]
     #[cfg(feature = "nightly")]
     fn next_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        use packed_simd::u8x8;
+        use core::simd::u8x8;
 
         // TODO use chunks_exact instead?
         // By using u8x8 instead of u8x16 we lost 2s on 16s but
         // we are less prone to find state change requirements.
-        for chunk in bytes.chunks(u8x8::lanes()) {
-            if chunk.len() == u8x8::lanes() && self.state == State::St {
+        for chunk in bytes.chunks(u8x8::LANES) {
+            if chunk.len() == u8x8::LANES && self.state == State::St {
                 // Load the bytes into a SIMD type
-                let bytes = u8x8::from_slice_unaligned(chunk);
+                let bytes = u8x8::from_slice(chunk);
 
                 // According to the state STATE_TRANSITION_TABLE we are in the `St` state
                 // and *none of those bytes* are in the `CWhite`, `CQuote` or `CBacks` ascci class
@@ -258,18 +260,17 @@ impl<R> JsonChecker<R> {
                 // We first compare with quotes because this is the most
                 // common character we can encounter in valid JSON strings
                 // and this way we are able to skip other comparisons faster
-                if bytes.eq(cquotes).any() ||
-                   bytes.eq(cbacks).any() ||
-                   bytes.eq(cwhites1).any() ||
-                   bytes.eq(cwhites2).any() ||
-                   bytes.eq(cwhites3).any()
+                if bytes.lanes_eq(cquotes).any()
+                    || bytes.lanes_eq(cbacks).any()
+                    || bytes.lanes_eq(cwhites1).any()
+                    || bytes.lanes_eq(cwhites2).any()
+                    || bytes.lanes_eq(cwhites3).any()
                 {
                     chunk.iter().try_for_each(|b| self.next_byte(*b))?;
                 }
 
                 // Now that we checked that these bytes will not change
                 // the state we can continue to the next chunk and ignore them
-
             } else {
                 chunk.iter().try_for_each(|b| self.next_byte(*b))?;
             }
@@ -293,11 +294,8 @@ impl<R> JsonChecker<R> {
         // We can potentially use try_blocks in the future.
         fn internal_next_byte<R>(jc: &mut JsonChecker<R>, next_byte: u8) -> Result<(), Error> {
             // Determine the character's class.
-            let next_class = if next_byte >= 128 {
-                Class::CEtc
-            } else {
-                ASCII_CLASS[next_byte as usize]
-            };
+            let next_class =
+                if next_byte >= 128 { Class::CEtc } else { ASCII_CLASS[next_byte as usize] };
 
             if next_class == Class::Invalid {
                 return Err(Error::InvalidCharacter);
@@ -321,55 +319,61 @@ impl<R> JsonChecker<R> {
             }
 
             match next_state {
-                State::Wec => { // Empty }
+                State::Wec => {
+                    // Empty }
                     if !jc.pop(Mode::Key) {
                         return Err(Error::EmptyCurlyBraces);
                     }
                     jc.state = State::Ok;
-                },
-                State::Wcu => { // }
+                }
+                State::Wcu => {
+                    // }
                     if !jc.pop(Mode::Object) {
                         return Err(Error::OrphanCurlyBrace);
                     }
                     jc.state = State::Ok;
-                },
-                State::Ws => { // ]
+                }
+                State::Ws => {
+                    // ]
                     if !jc.pop(Mode::Array) {
                         return Err(Error::OrphanSquareBrace);
                     }
                     jc.state = State::Ok;
-                },
-                State::Woc => { // {
+                }
+                State::Woc => {
+                    // {
                     if !jc.push(Mode::Key) {
                         return Err(Error::MaxDepthReached);
                     }
                     jc.state = State::Ob;
-                },
-                State::Wos => { // [
+                }
+                State::Wos => {
+                    // [
                     if !jc.push(Mode::Array) {
                         return Err(Error::MaxDepthReached);
                     }
                     jc.state = State::Ar;
                 }
-                State::Wq => { // "
+                State::Wq => {
+                    // "
                     match jc.stack.last() {
                         Some(Mode::Done) => {
                             if !jc.push(Mode::String) {
                                 return Err(Error::MaxDepthReached);
                             }
                             jc.state = State::St;
-                        },
+                        }
                         Some(Mode::String) => {
                             jc.pop(Mode::String);
                             jc.state = State::Ok;
-                        },
+                        }
                         Some(Mode::Key) => jc.state = State::Co,
-                        Some(Mode::Array) |
-                        Some(Mode::Object) => jc.state = State::Ok,
+                        Some(Mode::Array) | Some(Mode::Object) => jc.state = State::Ok,
                         _ => return Err(Error::InvalidQuote),
                     }
-                },
-                State::Wcm => { // ,
+                }
+                State::Wcm => {
+                    // ,
                     match jc.stack.last() {
                         Some(Mode::Object) => {
                             // A comma causes a flip from object mode to key mode.
@@ -381,17 +385,16 @@ impl<R> JsonChecker<R> {
                         Some(Mode::Array) => jc.state = State::Va,
                         _ => return Err(Error::InvalidComma),
                     }
-                },
-                State::Wcl => { // :
+                }
+                State::Wcl => {
+                    // :
                     // A colon causes a flip from key mode to object mode.
                     if !jc.pop(Mode::Key) || !jc.push(Mode::Object) {
                         return Err(Error::InvalidColon);
                     }
                     jc.state = State::Va;
-                },
-                State::Invalid => {
-                    return Err(Error::InvalidState)
-                },
+                }
+                State::Invalid => return Err(Error::InvalidState),
 
                 // Or change the state.
                 state => jc.state = state,
@@ -429,7 +432,7 @@ impl<R> JsonChecker<R> {
 
         if is_state_valid && self.pop(Mode::Done) {
             let outer_type = self.outer_type.expect("BUG: the outer type must have been guessed");
-            return Ok((self.reader, outer_type))
+            return Ok((self.reader, outer_type));
         }
 
         // We do not need to catch this error to *fuse* the checker because this method
@@ -467,7 +470,7 @@ impl<R: io::Read> io::Read for JsonChecker<R> {
                 // type instead we use the IncompleteElement error.
                 self.error = Some(Error::IncompleteElement);
                 return Err(error);
-            },
+            }
             Ok(len) => len,
         };
 

@@ -42,7 +42,7 @@ sys   0m12.628s
 
 ### `ojc` with SIMD
 
-How many times does it takes to `ojc` already? 56s, that can't be true, we are in 2020...
+How many times does it takes to `ojc` already? 56s, that can't be true, we are in 2022...
 What about enabling some SIMD optimizations? Compile the binary with the `nightly` feature and here we go!
 
 ```bash
